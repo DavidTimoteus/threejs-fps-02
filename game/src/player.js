@@ -9,6 +9,7 @@ const CROUCH_HEIGHT = 1.15;
 const STAND_EYE = 1.60;
 const CROUCH_EYE = 1.02;
 const RADIUS = 0.35;
+const UP = new THREE.Vector3(0, 1, 0);
 
 export function createPlayer(colliders) {
   const position = new THREE.Vector3(0, 0.3, -20);
@@ -22,9 +23,9 @@ export function createPlayer(colliders) {
 
   // Combat status
   let health = 100;
-  let armor = 100;
-  let hasHelmet = true;
-  let hasKit = true;
+  let armor = 0;
+  let hasHelmet = false;
+  let hasKit = false;
   let team = 'CT';
 
   const playerBox = new THREE.Box3();
@@ -106,17 +107,24 @@ export function createPlayer(colliders) {
       health = Math.min(100, health + hp);
       armor = Math.min(100, armor + arm);
     },
+    // New round: a survivor keeps armor and kit (as in the buy economy); a dead player starts bare.
     reset(spawnPos, newTeam = 'CT') {
+      if (health <= 0) {
+        armor = 0;
+        hasHelmet = false;
+        hasKit = false;
+      }
       if (spawnPos) position.copy(spawnPos);
       velocity.set(0, 0, 0);
       yaw = newTeam === 'CT' ? 0 : Math.PI;
       pitch = 0;
       health = 100;
-      armor = 100;
-      hasHelmet = true;
-      hasKit = newTeam === 'CT';
       team = newTeam;
       onGround = false;
+    },
+    giveArmor() {
+      armor = 100;
+      hasHelmet = true;
     },
     look(dx, dy) {
       yaw -= dx * 0.0022;
@@ -147,7 +155,7 @@ export function createPlayer(colliders) {
 
       if (moveVec.lengthSq() > 0) {
         moveVec.normalize();
-        moveVec.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+        moveVec.applyAxisAngle(UP, yaw);
         moveVec.multiplyScalar(baseSpeed);
       }
 

@@ -123,6 +123,41 @@
   }
   #ammo.empty #ammo-mag { color: var(--danger); }
   #ammo-reserve { font-size: 18px; color: var(--muted); }
+  #loadout {
+    position: fixed;
+    right: 24px;
+    bottom: 92px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-readout);
+    font-size: 12px;
+  }
+  #weapon-name {
+    background: rgba(28, 32, 40, 0.85);
+    padding: 4px 10px;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  .nade-tag {
+    background: rgba(28, 32, 40, 0.65);
+    padding: 4px 8px;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    color: var(--muted);
+    opacity: 0.45;
+  }
+  .nade-tag.owned { color: var(--accent); border-color: var(--accent); opacity: 1; }
+  #damage-flash {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(circle, transparent 55%, rgba(230, 76, 76, 0.45) 100%);
+    opacity: 0;
+    transition: opacity 220ms ease-out;
+  }
+  #damage-flash.on { opacity: 1; }
 
   /* Killfeed */
   #killfeed {
@@ -265,6 +300,14 @@
     <div class="vital-box"><span class="label">+</span><span class="val" id="health-val">100</span></div>
     <div class="vital-box"><span class="label">🛡️</span><span class="val" id="armor-val">100</span></div>
     <div class="vital-box"><span class="label">💰</span><span class="val" id="money-val">$800</span></div>
+  </div>
+
+  <div id="damage-flash"></div>
+
+  <div id="loadout">
+    <span id="weapon-name">AK-47 Rifle</span>
+    <span class="nade-tag" id="nade-he">[4] HE</span>
+    <span class="nade-tag" id="nade-smoke">[5] SMOKE</span>
   </div>
 
   <div id="ammo">

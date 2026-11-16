@@ -15,10 +15,10 @@ export function createInput(domElement, onLockChange) {
     keys.add(event.code);
     if (event.code === 'KeyB') buyPressed = true;
     if (event.code === 'KeyE') usePressed = true;
-    if (event.code === 'Digit1') slotRequested = 1;
-    if (event.code === 'Digit2') slotRequested = 2;
-    if (event.code === 'Digit3') slotRequested = 3;
-    if (event.code === 'Digit4') slotRequested = 4;
+    if (event.code.startsWith('Digit')) {
+      const n = event.code.charCodeAt(5) - 48;
+      if (n >= 1 && n <= 8) slotRequested = n; // 1-5 weapon slots; 1-8 buy-menu rows while it is open
+    }
   }
 
   function onKeyUp(event) {

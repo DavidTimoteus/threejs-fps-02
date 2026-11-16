@@ -20,9 +20,14 @@ export function createHud() {
   const overlayMsg = document.getElementById('overlay-msg');
   const radarCanvas = document.getElementById('radar');
   const radarCtx = radarCanvas ? radarCanvas.getContext('2d') : null;
+  const weaponEl = document.getElementById('weapon-name');
+  const heEl = document.getElementById('nade-he');
+  const smokeEl = document.getElementById('nade-smoke');
+  const damageEl = document.getElementById('damage-flash');
 
   let playCallback = null;
-  let buyCallback = null;
+  let lastObjective = null;
+  let lastProgress = -1;
 
   document.getElementById('play-btn')?.addEventListener('click', () => {
     if (playCallback) playCallback();
@@ -30,7 +35,6 @@ export function createHud() {
 
   return {
     onPlay(cb) { playCallback = cb; },
-    onBuy(cb) { buyCallback = cb; },
 
     setAmmo(mag, reserve) {
       if (ammoMagEl) ammoMagEl.textContent = mag;
@@ -62,12 +66,29 @@ export function createHud() {
 
     showObjective(text, progress = 0) {
       if (!objectiveEl) return;
+      const pct = Math.round(progress * 100);
+      if (text === lastObjective && pct === lastProgress) return; // called every tick: touch the DOM only on change
+      lastObjective = text;
+      lastProgress = pct;
       if (!text) {
         objectiveEl.style.display = 'none';
         return;
       }
       objectiveEl.style.display = 'block';
-      objectiveEl.innerHTML = `<div>${text}</div>${progress > 0 ? `<div class="bar" style="width: ${Math.round(progress * 100)}%"></div>` : ''}`;
+      objectiveEl.innerHTML = `<div>${text}</div>${pct > 0 ? `<div class="bar" style="width: ${pct}%"></div>` : ''}`;
+    },
+
+    setLoadout(weaponName, hasHe, hasSmoke) {
+      if (weaponEl) weaponEl.textContent = weaponName;
+      if (heEl) heEl.classList.toggle('owned', hasHe);
+      if (smokeEl) smokeEl.classList.toggle('owned', hasSmoke);
+    },
+
+    damageFlash() {
+      if (!damageEl) return;
+      damageEl.classList.remove('on');
+      void damageEl.offsetWidth; // restart the CSS fade
+      damageEl.classList.add('on');
     },
 
     pushKillfeed(killer, victim, isHeadshot) {
@@ -97,7 +118,7 @@ export function createHud() {
       buyMenuEl.style.display = show ? 'grid' : 'none';
     },
 
-    drawRadar(player, bots, sites, c4) {
+    drawRadar(player, bots, sites, c4, clouds) {
       if (!radarCtx) return;
       const w = radarCanvas.width;
       const h = radarCanvas.height;
@@ -112,6 +133,17 @@ export function createHud() {
       const mapScale = 2.4; // 50m mapped to canvas
       const cx = w / 2;
       const cy = h / 2;
+
+      // Draw active smoke clouds on radar
+      if (clouds) {
+        radarCtx.fillStyle = 'rgba(195, 202, 210, 0.45)';
+        for (const c of clouds) {
+          if (!c.active || c.radius < 0.5) continue;
+          radarCtx.beginPath();
+          radarCtx.arc(cx + c.center.x * mapScale, cy + c.center.z * mapScale, c.radius * mapScale, 0, Math.PI * 2);
+          radarCtx.fill();
+        }
+      }
 
       // Draw Bomb Sites
       if (sites) {

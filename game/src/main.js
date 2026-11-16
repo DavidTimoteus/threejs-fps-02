@@ -1,20 +1,22 @@
 // Tactical Strike: Fixed 60 Hz simulation loop and deterministic renderer.
-// Ties together player physics, multi-weapon ballistics, bot state machines, C4 bomb objectives, and the tactical economy.
+// Ties together player physics, multi-weapon ballistics, HE & smoke grenades, acoustic/LOS bot AI, C4 objectives, and economy.
 
 import * as THREE from 'three';
 import { PALETTE } from './palette.js';
 import { createWorld } from './world.js';
 import { createInput } from './input.js';
 import { createPlayer } from './player.js';
-import { createWeapon, WEAPON_TYPES } from './weapon.js';
+import { createWeapon } from './weapon.js';
 import { createBomb } from './bomb.js';
 import { createBots } from './bots.js';
-import { createEconomy, CATALOG } from './economy.js';
+import { createEconomy } from './economy.js';
 import { createHud } from './hud.js';
 import { createAudio } from './audio.js';
 import { createGrenades } from './grenade.js';
+import { createSight } from './sight.js';
 
 const FIXED_STEP = 1 / 60;
+const BUY_ORDER = ['deagle', 'mp5', 'ak47', 'awp', 'armor', 'defuseKit', 'heGrenade', 'smokeGrenade'];
 const params = new URLSearchParams(window.location.search);
 const shot = params.get('shot');
 const seed = Number.parseInt(params.get('seed') ?? '1', 10) || 1;
@@ -54,12 +56,35 @@ const audio = createAudio();
 const weapon = createWeapon(camera);
 const player = createPlayer(world.colliders);
 const bomb = createBomb(scene, world.sites);
-const grenades = createGrenades(scene, world.colliders, audio);
+
+let bots = null;
+const grenades = createGrenades(scene, world.colliders, audio, (pos, radius) => {
+  if (bots) bots.hearNoise(pos, radius, null);
+});
+const sight = createSight(world.colliders, grenades);
+
+bots = createBots(scene, {
+  colliders: world.colliders,
+  sight,
+  onKill(killer, victim, isHeadshot) {
+    hud.pushKillfeed(killer, victim, isHeadshot);
+  },
+  onFire(bot, dist) {
+    if (audio) audio.playGunshot(bot.cfg.weapon, Math.max(0.08, 1 - dist / 45));
+  },
+  onPlayerHit() {
+    if (audio) audio.playHurt();
+    hud.damageFlash();
+    hud.setHealth(player.state.health, player.state.armor);
+  },
+});
 
 let ctScore = 0;
 let tScore = 0;
-let roundTimer = 115.0; // 1:55 round
+let roundTimer = 115.0;
 let buyTimeLeft = 15.0;
+let simTime = 0;
+let footstepTimer = 0;
 let roundEnded = false;
 let isBuyMenuOpen = false;
 let started = false;
@@ -75,41 +100,34 @@ const _origin = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _up = new THREE.Vector3();
 
-const bots = createBots(scene, (killer, victim, isHeadshot) => {
-  hud.pushKillfeed(killer, victim, isHeadshot);
-});
-
 const input = createInput(renderer.domElement, onLockChange);
 const shootables = world.shootables.concat(bots.hitMeshes);
+
+function syncHudLoadout() {
+  hud.setAmmo(weapon.state.mag, weapon.state.reserve);
+  hud.setLoadout(weapon.state.name, weapon.owns('heGrenade'), weapon.owns('smokeGrenade'));
+  hud.setHealth(player.state.health, player.state.armor);
+  hud.setMoney(economy.money);
+}
+
+function buyItem(buyId) {
+  if (!buyId || buyTimeLeft <= 0) return;
+  const item = economy.buy(buyId, {
+    armor: player.state.armor,
+    hasKit: player.state.hasKit,
+    alreadyOwned: weapon.owns(buyId),
+  });
+  if (!item) return;
+  if (item.id === 'armor') player.giveArmor();
+  else if (item.id === 'defuseKit') player.state.hasKit = true;
+  else weapon.give(item.id);
+  syncHudLoadout();
+}
 
 // --- Tactical Buy Menu Setup ---
 document.querySelectorAll('.buy-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
-    const buyId = btn.getAttribute('data-buy');
-    if (buyId && buyTimeLeft > 0) {
-      const item = economy.buy(buyId, {
-        armor: player.state.armor,
-        hasHelmet: player.state.hasHelmet,
-        hasKit: player.state.hasKit,
-      });
-      if (item) {
-        hud.setMoney(economy.money);
-        if (item.category === 'pistol' || item.category === 'rifle' || item.category === 'smg' || item.category === 'sniper') {
-          weapon.equip(item.id);
-        } else if (item.category === 'grenade') {
-          weapon.addGrenade(1);
-          weapon.equip('heGrenade');
-        } else if (item.id === 'armor') {
-          player.heal(0, 100);
-        } else if (item.id === 'helmet') {
-          player.heal(0, 100);
-        } else if (item.id === 'defuseKit') {
-          player.state.hasKit = true;
-        }
-        hud.setAmmo(weapon.state.mag, weapon.state.reserve);
-        hud.setHealth(player.state.health, player.state.armor);
-      }
-    }
+    buyItem(btn.getAttribute('data-buy'));
   });
 });
 
@@ -134,38 +152,36 @@ function syncCamera() {
   camera.position.set(body.position.x, body.position.y + body.eye, body.position.z);
   camera.rotation.set(body.pitch + weapon.state.recoilPitch, body.yaw + weapon.state.recoilYaw, 0, 'YXZ');
 
-  // ADS Zoom FOV
-  const targetFov = input.state.aiming ? weapon.def.adsFov : 74;
+  const targetFov = weapon.isAds ? weapon.def.adsFov : 74;
   if (camera.fov !== targetFov) {
     camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.25);
     camera.updateProjectionMatrix();
-    input.setSensitivityScale(input.state.aiming ? 0.45 : 1.0);
+    input.setSensitivityScale(weapon.isAds ? 0.45 : 1.0);
   }
 }
 
 function shoot() {
   if (weapon.def.type === 'grenade') {
+    const kind = weapon.def.kind || 'he';
     if (!weapon.takeRound()) return false;
     camera.getWorldPosition(_origin);
     camera.getWorldDirection(_shootDir);
-    grenades.throwGrenade(_origin, _shootDir, player.velocity, 'Player');
+    grenades.throwGrenade(_origin, _shootDir, player.state.velocity, 'Player', kind);
     weapon.pullTrigger();
-    hud.setAmmo(weapon.state.mag, weapon.state.reserve);
-    if (weapon.state.mag === 0 && weapon.state.reserve === 0) {
-      setTimeout(() => weapon.equip('ak47'), 350);
-    }
+    weapon.equip(weapon.primary || 'deagle');
+    syncHudLoadout();
     return true;
   }
 
   if (!weapon.takeRound()) return false;
   if (audio) audio.playGunshot(weapon.def.id);
+  bots.hearNoise(player.state.position, weapon.def.noise || 26, player.state.team);
 
   camera.getWorldPosition(_origin);
   camera.getWorldDirection(_shootDir);
   _right.crossVectors(_shootDir, camera.up).normalize();
   _up.crossVectors(_right, _shootDir).normalize();
 
-  // Dynamic spread based on velocity & stance
   const spreadAngle = weapon.spread(player.groundSpeed(), player.state.isCrouching, player.state.isWalking);
   const spreadX = (random() * 2 - 1) * spreadAngle;
   const spreadY = (random() * 2 - 1) * spreadAngle;
@@ -174,6 +190,7 @@ function shoot() {
 
   scene.updateMatrixWorld(true);
   _raycaster.set(_origin, _shootDir);
+  _raycaster.far = weapon.def.type === 'melee' ? weapon.def.range : 120;
   const hits = _raycaster.intersectObjects(shootables, false);
 
   if (hits.length > 0) {
@@ -184,69 +201,94 @@ function shoot() {
       hud.hitMarker(killed, isHead ? 150 : 80);
       if (audio) audio.playHit(isHead);
       if (killed) {
-        economy.add(weapon.def.id === 'knife' ? 1500 : weapon.def.type === 'sniper' ? 100 : 300);
+        economy.rewardKill(weapon.def);
         hud.setMoney(economy.money);
       }
     }
   }
 
   weapon.pullTrigger();
-  hud.setAmmo(weapon.state.mag, weapon.state.reserve);
+  syncHudLoadout();
   return true;
 }
 
 function restartRound(winnerTeam = null) {
+  const diedLastRound = player.state.health <= 0;
   roundEnded = false;
   roundTimer = 115.0;
   buyTimeLeft = 15.0;
+  isBuyMenuOpen = false;
+  hud.toggleBuyMenu(false);
   bomb.reset();
   grenades.reset();
   bots.resetSpawns(world);
   player.reset(player.state.team === 'CT' ? world.spawnPoints.CT : world.spawnPoints.T, player.state.team);
-  weapon.refill();
 
-  if (winnerTeam) {
+  if (winnerTeam === null) {
+    // Initial deployment loadout
+    player.giveArmor();
+    player.state.hasKit = true;
+    weapon.give('heGrenade');
+    weapon.give('smokeGrenade');
+    weapon.give('ak47');
+  } else {
+    if (diedLastRound) weapon.loseAll();
+    weapon.refill();
     economy.onRoundEnd(winnerTeam, player.state.team, bomb.isPlanted);
     if (winnerTeam === 'CT') ctScore += 1;
     else tScore += 1;
   }
 
   hud.setScores(ctScore, tScore, roundTimer, bots.aliveCount('CT') + 1, bots.aliveCount('T'));
-  hud.setHealth(player.state.health, player.state.armor);
-  hud.setAmmo(weapon.state.mag, weapon.state.reserve);
-  hud.setMoney(economy.money);
+  syncHudLoadout();
   hud.showObjective('');
 }
 
 function step(dt) {
   if (roundEnded) return;
+  simTime += dt;
 
-  // Round Clock
   roundTimer = Math.max(0, roundTimer - dt);
-  if (buyTimeLeft > 0) buyTimeLeft = Math.max(0, buyTimeLeft - dt);
+  if (buyTimeLeft > 0) {
+    buyTimeLeft = Math.max(0, buyTimeLeft - dt);
+    if (buyTimeLeft <= 0 && isBuyMenuOpen) {
+      isBuyMenuOpen = false;
+      hud.toggleBuyMenu(false);
+    }
+  }
 
-  // Keyboard toggles
   if (input.takeBuyKey() && buyTimeLeft > 0) {
     isBuyMenuOpen = !isBuyMenuOpen;
     hud.toggleBuyMenu(isBuyMenuOpen, null, economy);
   }
 
   const slot = input.takeSlotRequest();
-  if (slot === 1) weapon.equip('ak47');
-  else if (slot === 2) weapon.equip('deagle');
-  else if (slot === 3) weapon.equip('knife');
-  else if (slot === 4) weapon.equip('heGrenade');
+  if (slot !== null) {
+    if (isBuyMenuOpen && buyTimeLeft > 0) {
+      buyItem(BUY_ORDER[slot - 1]);
+    } else if (weapon.equipSlot(slot)) {
+      syncHudLoadout();
+    }
+  }
+
+  weapon.setAds(input.state.aiming);
 
   // C4 Interaction
   const isHoldingUse = input.state.keys.has('KeyE');
   if (bomb.isPlanted) {
     if (player.state.team === 'CT' && bomb.checkDefusable(player.state.position)) {
       hud.showObjective('HOLD [E] TO DEFUSE C4', bomb.defuseProgress);
-      bomb.startDefusing(player.state.position);
-      if (bomb.updateDefusing(dt, isHoldingUse, player.state.position, player.state.hasKit)) {
-        roundEnded = true;
-        restartRound('CT');
-        hud.showOverlay('end', ctScore * 100);
+      if (isHoldingUse) {
+        bomb.startDefusing(player.state.position);
+        if (bomb.updateDefusing(dt, true, player.state.position, player.state.hasKit)) {
+          if (audio) audio.playDefuse();
+          roundEnded = true;
+          restartRound('CT');
+          hud.showOverlay('end', ctScore * 100);
+          return;
+        }
+      } else {
+        bomb.updateDefusing(dt, false, player.state.position, player.state.hasKit);
       }
     } else {
       hud.showObjective(`BOMB PLANTED [${Math.ceil(bomb.fuse)}s]`);
@@ -255,9 +297,11 @@ function step(dt) {
     hud.showObjective('HOLD [E] TO PLANT C4', bomb.plantProgress);
     if (isHoldingUse) {
       bomb.startPlanting(player.state.position);
-      if (bomb.updatePlanting(dt, isHoldingUse, player.state.position)) {
+      if (bomb.updatePlanting(dt, true, player.state.position)) {
         hud.showObjective('BOMB HAS BEEN PLANTED!');
       }
+    } else {
+      bomb.updatePlanting(dt, false, player.state.position);
     }
   } else {
     hud.showObjective('');
@@ -265,11 +309,20 @@ function step(dt) {
 
   // Step Systems
   player.step(dt, input.state.keys);
+  const speed = player.groundSpeed();
+  if (player.state.onGround && speed > 3.5 && !player.state.isWalking && !player.state.isCrouching) {
+    footstepTimer -= dt;
+    if (footstepTimer <= 0) {
+      footstepTimer = 0.38;
+      if (audio) audio.playFootstep(0.12);
+      bots.hearNoise(player.state.position, 13, player.state.team);
+    }
+  }
+
   weapon.step(dt);
-  bots.step(dt, player, bomb, world.colliders);
+  bots.step(dt, player, bomb, simTime);
   grenades.step(dt, bots, player, hud, (shake) => {
-    weapon.state.recoilPitch += (Math.random() - 0.5) * shake;
-    weapon.state.recoilYaw += (Math.random() - 0.5) * shake;
+    weapon.addRecoil((random() - 0.5) * shake, (random() - 0.5) * shake);
   });
   const bombEvent = bomb.step(dt);
 
@@ -277,6 +330,7 @@ function step(dt) {
     roundEnded = true;
     restartRound('T');
     hud.showOverlay('end', tScore * 100);
+    return;
   }
 
   // Check Round Elimination
@@ -327,7 +381,7 @@ function frame(now) {
     if (accumulator > FIXED_STEP * 5) accumulator = 0;
 
     syncCamera();
-    hud.drawRadar(player, bots.items, world.sites, bomb);
+    hud.drawRadar(player, bots.items, world.sites, bomb, grenades.clouds);
   }
 
   renderer.render(scene, camera);
@@ -339,47 +393,45 @@ function settle(steps) {
 }
 
 function runShot(name) {
+  restartRound();
   hud.hideOverlay();
   player.state.pitch = 0;
   player.state.yaw = 0;
 
   if (name === 'play') {
-    // Action frame: Player engaging in Mid with bots visible
     player.state.position.set(-2.5, 0, 4.0);
     player.state.yaw = Math.PI * 0.95;
     player.state.pitch = -0.05;
-    weapon.equip('ak47');
+    weapon.give('ak47');
+    grenades.spawnSmokeAt(new THREE.Vector3(-4.0, 0, -4.5), 2.4);
     settle(25);
     shoot();
     hud.pushKillfeed('Player', 'Anarchist', true);
   } else if (name === 'end') {
-    // Bomb site plant & victory frame
     player.state.position.set(-16.0, 0.45, -11.0);
     player.state.yaw = -0.4;
-    weapon.equip('awp');
+    weapon.give('awp');
     settle(40);
     hud.showObjective('BOMB PLANTED - DEFEND THE SITE');
     hud.pushKillfeed('Player', 'Phoenix', false);
     hud.showOverlay('end', 1500);
   } else {
-    // Start deploy frame
     player.state.position.set(0, 0.3, -20);
     player.state.yaw = 0;
-    weapon.equip('ak47');
+    weapon.give('ak47');
     settle(10);
     hud.showOverlay('start', 0);
   }
 
   hud.setScores(2, 1, 95, 2, 1);
-  hud.setHealth(player.state.health, player.state.armor);
-  hud.setAmmo(weapon.state.mag, weapon.state.reserve);
+  syncHudLoadout();
   hud.setMoney(3400);
 
   let painted = 0;
   function paint() {
     requestAnimationFrame(paint);
     syncCamera();
-    hud.drawRadar(player, bots.items, world.sites, bomb);
+    hud.drawRadar(player, bots.items, world.sites, bomb, grenades.clouds);
     renderer.render(scene, camera);
     painted += 1;
     if (painted === 2) {
