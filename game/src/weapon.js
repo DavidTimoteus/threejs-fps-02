@@ -71,6 +71,22 @@ export const WEAPON_TYPES = {
     movePenalty: 0.15,
     crouchBonus: 0.40,
     adsFov: 24, // 3x High Zoom
+  },
+  heGrenade: {
+    id: 'heGrenade',
+    name: 'HE Grenade',
+    slot: 4,
+    type: 'grenade',
+    damage: 85,
+    fireRate: 0.75,
+    reloadTime: 0,
+    magSize: 1,
+    reserveMax: 2,
+    recoil: 0.01,
+    recoilRecovery: 10.0,
+    baseSpread: 0,
+    movePenalty: 0,
+    adsFov: 74,
   }
 };
 
@@ -139,6 +155,17 @@ export function createWeapon(camera) {
   group.add(awpGroup);
   weaponMeshes.awp = awpGroup;
 
+  // 5. HE Grenade Mesh
+  const heGroup = new THREE.Group();
+  const heBody = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.12, 10), new THREE.MeshStandardMaterial({ color: 0x3d4a38, roughness: 0.5 }));
+  const hePin = new THREE.Mesh(new THREE.TorusGeometry(0.02, 0.005, 6, 12), gunMetalMat);
+  hePin.position.set(0, 0.07, 0.02);
+  hePin.rotation.y = Math.PI / 4;
+  heGroup.add(heBody, hePin);
+  heGroup.position.set(0.22, -0.20, -0.40);
+  group.add(heGroup);
+  weaponMeshes.heGrenade = heGroup;
+
   // Muzzle Flash
   const flashMesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0), flashMat);
   flashMesh.position.set(0.26, -0.18, -0.92);
@@ -150,6 +177,7 @@ export function createWeapon(camera) {
     deagle: { currentMag: 7, reserve: 35 },
     ak47: { currentMag: 30, reserve: 90 },
     awp: { currentMag: 5, reserve: 20 },
+    heGrenade: { currentMag: 1, reserve: 1 },
   };
 
   let currentId = 'ak47';
@@ -204,6 +232,15 @@ export function createWeapon(camera) {
     takeRound() {
       if (weaponDef.type === 'melee') return true;
       const inv = inventory[currentId];
+      if (weaponDef.type === 'grenade') {
+        if (inv.currentMag <= 0) return false;
+        inv.currentMag = 0;
+        if (inv.reserve > 0) {
+          inv.currentMag = 1;
+          inv.reserve -= 1;
+        }
+        return true;
+      }
       if (inv.currentMag <= 0) {
         this.reload();
         return false;
@@ -211,6 +248,12 @@ export function createWeapon(camera) {
       inv.currentMag -= 1;
       shotCount += 1;
       return true;
+    },
+    addGrenade(count = 1) {
+      const inv = inventory.heGrenade;
+      if (!inv) return;
+      if (inv.currentMag === 0) inv.currentMag = 1;
+      else inv.reserve = Math.min(WEAPON_TYPES.heGrenade.reserveMax, inv.reserve + count);
     },
     pullTrigger() {
       cooldown = weaponDef.fireRate;

@@ -11,6 +11,8 @@ import { createBomb } from './bomb.js';
 import { createBots } from './bots.js';
 import { createEconomy, CATALOG } from './economy.js';
 import { createHud } from './hud.js';
+import { createAudio } from './audio.js';
+import { createGrenades } from './grenade.js';
 
 const FIXED_STEP = 1 / 60;
 const params = new URLSearchParams(window.location.search);
@@ -48,9 +50,11 @@ scene.add(camera);
 const world = createWorld(scene);
 const economy = createEconomy();
 const hud = createHud();
+const audio = createAudio();
 const weapon = createWeapon(camera);
 const player = createPlayer(world.colliders);
 const bomb = createBomb(scene, world.sites);
+const grenades = createGrenades(scene, world.colliders, audio);
 
 let ctScore = 0;
 let tScore = 0;
@@ -92,6 +96,9 @@ document.querySelectorAll('.buy-btn').forEach((btn) => {
         hud.setMoney(economy.money);
         if (item.category === 'pistol' || item.category === 'rifle' || item.category === 'smg' || item.category === 'sniper') {
           weapon.equip(item.id);
+        } else if (item.category === 'grenade') {
+          weapon.addGrenade(1);
+          weapon.equip('heGrenade');
         } else if (item.id === 'armor') {
           player.heal(0, 100);
         } else if (item.id === 'helmet') {
@@ -137,7 +144,21 @@ function syncCamera() {
 }
 
 function shoot() {
+  if (weapon.def.type === 'grenade') {
+    if (!weapon.takeRound()) return false;
+    camera.getWorldPosition(_origin);
+    camera.getWorldDirection(_shootDir);
+    grenades.throwGrenade(_origin, _shootDir, player.velocity, 'Player');
+    weapon.pullTrigger();
+    hud.setAmmo(weapon.state.mag, weapon.state.reserve);
+    if (weapon.state.mag === 0 && weapon.state.reserve === 0) {
+      setTimeout(() => weapon.equip('ak47'), 350);
+    }
+    return true;
+  }
+
   if (!weapon.takeRound()) return false;
+  if (audio) audio.playGunshot(weapon.def.id);
 
   camera.getWorldPosition(_origin);
   camera.getWorldDirection(_shootDir);
@@ -161,6 +182,7 @@ function shoot() {
       const isHead = hit.object.userData.part === 'head';
       const killed = bots.damage(hit.object, weapon.def.damage, isHead, 'Player');
       hud.hitMarker(killed, isHead ? 150 : 80);
+      if (audio) audio.playHit(isHead);
       if (killed) {
         economy.add(weapon.def.id === 'knife' ? 1500 : weapon.def.type === 'sniper' ? 100 : 300);
         hud.setMoney(economy.money);
@@ -178,6 +200,7 @@ function restartRound(winnerTeam = null) {
   roundTimer = 115.0;
   buyTimeLeft = 15.0;
   bomb.reset();
+  grenades.reset();
   bots.resetSpawns(world);
   player.reset(player.state.team === 'CT' ? world.spawnPoints.CT : world.spawnPoints.T, player.state.team);
   weapon.refill();
@@ -212,7 +235,7 @@ function step(dt) {
   if (slot === 1) weapon.equip('ak47');
   else if (slot === 2) weapon.equip('deagle');
   else if (slot === 3) weapon.equip('knife');
-  else if (slot === 4) weapon.equip('awp');
+  else if (slot === 4) weapon.equip('heGrenade');
 
   // C4 Interaction
   const isHoldingUse = input.state.keys.has('KeyE');
@@ -244,6 +267,10 @@ function step(dt) {
   player.step(dt, input.state.keys);
   weapon.step(dt);
   bots.step(dt, player, bomb, world.colliders);
+  grenades.step(dt, bots, player, hud, (shake) => {
+    weapon.state.recoilPitch += (Math.random() - 0.5) * shake;
+    weapon.state.recoilYaw += (Math.random() - 0.5) * shake;
+  });
   const bombEvent = bomb.step(dt);
 
   if (bombEvent === 'detonated') {

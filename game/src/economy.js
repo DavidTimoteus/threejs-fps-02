@@ -46,6 +46,7 @@ export function createEconomy() {
         if (inventory.armor >= 100 && inventory.hasHelmet) return null;
       }
       if (item.id === 'defuseKit' && inventory.hasKit) return null;
+      if (item.category === 'grenade' && (inventory.grenades ?? 0) >= 2) return null;
 
       playerMoney -= item.price;
       return item;
