@@ -2,8 +2,8 @@
 // Clean, readable, high-contrast palette for three.js materials and tactical HUD.
 
 export const PALETTE = {
-  canvas: '#101318',      // Deep night sky / distant horizon
-  surface: '#1c2028',     // Ground foundation & concrete slabs
+  canvas: '#384e68',      // Clear dusk Mediterranean sky so sandstone architecture has strong horizon contrast
+  surface: '#2b313c',     // Ground foundation & concrete slabs
   hairline: '#2d3340',    // Trim & borders
   sand: '#c4ad86',        // Warm sandstone walls and main buildings
   darkSand: '#8a7657',    // Shaded sandstone & alley recesses

@@ -52,7 +52,7 @@ export function createWeapon(camera) {
   const gunMetalMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(PALETTE.metal), metalness: 0.8, roughness: 0.35 });
   const gunWoodMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(PALETTE.crate), roughness: 0.75 });
   const polymerMat = new THREE.MeshStandardMaterial({ color: 0x23272e, roughness: 0.6 });
-  const flashMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(PALETTE.accent), transparent: true, opacity: 0 });
+  const flashMat = new THREE.MeshBasicMaterial({ color: 0xffde7a, transparent: true, opacity: 0 });
 
   const weaponMeshes = {};
   function part(geo, mat, x = 0, y = 0, z = 0, rx = 0) {
@@ -105,8 +105,8 @@ export function createWeapon(camera) {
     addMesh(id, [part(grenadeBody, new THREE.MeshStandardMaterial({ color, roughness: 0.5 })), pin], 0.22, -0.20, -0.40);
   }
 
-  const flashMesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0), flashMat);
-  flashMesh.position.set(0.26, -0.18, -0.92);
+  const flashMesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.032, 0), flashMat);
+  flashMesh.position.set(0.26, -0.20, -0.86);
   group.add(flashMesh);
 
   // Ammunition per weapon and the set of weapons the player owns this life.

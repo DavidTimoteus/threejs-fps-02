@@ -17,6 +17,64 @@ export function createWorld(scene) {
     });
   }
 
+  // Subtle procedural 512x512 tile & masonry detail maps (100% offline, zero network calls)
+  function createProceduralTexture(type) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 512, 512);
+
+    if (type === 'surface') {
+      ctx.strokeStyle = '#d4d8dc';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(2, 2, 508, 508);
+      ctx.strokeStyle = '#e6eaee';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(256, 0); ctx.lineTo(256, 512);
+      ctx.moveTo(0, 256); ctx.lineTo(512, 256);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = '#ded7cd';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (let y = 0; y <= 512; y += 128) {
+        ctx.moveTo(0, y); ctx.lineTo(512, y);
+      }
+      for (let y = 0; y < 512; y += 128) {
+        const offset = (y / 128) % 2 === 0 ? 0 : 128;
+        for (let x = offset; x <= 512; x += 256) {
+          ctx.moveTo(x, y); ctx.lineTo(x, y + 128);
+        }
+      }
+      ctx.stroke();
+    }
+
+    const imgData = ctx.getImageData(0, 0, 512, 512);
+    const data = imgData.data;
+    let seedVal = type === 'surface' ? 1337 : 4242;
+    for (let i = 0; i < data.length; i += 4) {
+      seedVal = (seedVal * 16807 + 7) % 2147483647;
+      const noise = ((seedVal % 100) / 100 - 0.5) * 14;
+      data[i] = Math.min(255, Math.max(0, data[i] + noise));
+      data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + noise));
+      data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + noise));
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(type === 'surface' ? 16 : 8, type === 'surface' ? 16 : 4);
+    return tex;
+  }
+
+  materials.surface.map = createProceduralTexture('surface');
+  materials.sand.map = createProceduralTexture('sand');
+  materials.darkSand.map = materials.sand.map;
+
   const colliders = [];
   const shootables = [];
 
@@ -37,14 +95,14 @@ export function createWorld(scene) {
     const ringMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = -Math.PI / 2;
-    ring.position.set(x, 0.03, z);
+    ring.position.set(x, 0.47, z);
     group.add(ring);
 
     // Center pulsating beacon pillar
-    const beaconGeo = new THREE.CylinderGeometry(0.08, 0.08, 3.5, 12);
-    const beaconMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.75 });
+    const beaconGeo = new THREE.CylinderGeometry(0.04, 0.04, 3.2, 12);
+    const beaconMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.45 });
     const beacon = new THREE.Mesh(beaconGeo, beaconMat);
-    beacon.position.set(x, 1.75, z);
+    beacon.position.set(x, 2.05, z);
     group.add(beacon);
 
     return { x, z, radius, label };
@@ -122,7 +180,7 @@ export function createWorld(scene) {
 
   // --- Lighting & Atmosphere ---
   // Warm golden sun key light with crisp soft shadows
-  const sun = new THREE.DirectionalLight(new THREE.Color(PALETTE.ink), 2.2);
+  const sun = new THREE.DirectionalLight(new THREE.Color(0xfff1d6), 2.7);
   sun.position.set(16, 26, 14);
   sun.target.position.set(0, 0, 0);
   sun.castShadow = true;
@@ -137,7 +195,7 @@ export function createWorld(scene) {
   scene.add(sun, sun.target);
 
   // Cool sky hemisphere ambient fill
-  const ambient = new THREE.HemisphereLight(new THREE.Color(PALETTE.sand), new THREE.Color(PALETTE.canvas), 0.95);
+  const ambient = new THREE.HemisphereLight(new THREE.Color(0x9bc4f2), new THREE.Color(0x7a654a), 1.15);
   scene.add(ambient);
 
   // Secondary tactical fill light

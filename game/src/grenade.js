@@ -182,7 +182,7 @@ export function createGrenades(scene, colliders, audio, onNoise) {
     const eased = 1 - (1 - grow) * (1 - grow);
     cloud.radius = SMOKE.radius * eased;
     const fade = cloud.age > SMOKE.fadeFrom ? 1 - (cloud.age - SMOKE.fadeFrom) / (SMOKE.life - SMOKE.fadeFrom) : 1;
-    cloud.material.opacity = 0.93 * fade;
+    cloud.material.opacity = 0.45 * fade;
     const drift = cloud.age * 0.35;
     for (let i = 0; i < cloud.puffs.length; i += 1) {
       const puff = cloud.puffs[i];

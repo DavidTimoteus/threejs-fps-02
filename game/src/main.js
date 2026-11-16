@@ -399,33 +399,75 @@ function runShot(name) {
   player.state.yaw = 0;
 
   if (name === 'play') {
-    player.state.position.set(-2.5, 0, 4.0);
-    player.state.yaw = Math.PI * 0.95;
-    player.state.pitch = -0.05;
+    player.state.position.set(-15.5, 0, 1.5);
+    player.state.yaw = 0.08;
+    player.state.pitch = -0.02;
+    weapon.give('heGrenade');
+    weapon.give('smokeGrenade');
     weapon.give('ak47');
-    grenades.spawnSmokeAt(new THREE.Vector3(-4.0, 0, -4.5), 2.4);
-    settle(25);
+    grenades.spawnSmokeAt(new THREE.Vector3(-18.2, 0, -9.2), 2.8);
+    syncCamera();
     shoot();
+    if (bots && bots.items) {
+      if (bots.items[0]) {
+        bots.items[0].position.set(-14.6, 0.45, -11.5);
+        bots.items[0].yaw = 0;
+        bots.items[0].group.rotation.y = 0;
+        bots.items[0].alive = true;
+        bots.items[0].group.visible = true;
+        bots.items[0].health = 100;
+      }
+      if (bots.items[1]) {
+        const dx = player.state.position.x - (-17.0);
+        const dz = player.state.position.z - (-13.5);
+        const yawToPlayer = Math.atan2(-dx, -dz);
+        bots.items[1].position.set(-17.0, 0.45, -13.5);
+        bots.items[1].yaw = yawToPlayer;
+        bots.items[1].group.rotation.y = yawToPlayer;
+        bots.items[1].alive = true;
+        bots.items[1].group.visible = true;
+        bots.items[1].health = 100;
+      }
+    }
+    hud.hitMarker(true, 5000);
     hud.pushKillfeed('Player', 'Anarchist', true);
-  } else if (name === 'end') {
-    player.state.position.set(-16.0, 0.45, -11.0);
-    player.state.yaw = -0.4;
-    weapon.give('awp');
-    settle(40);
-    hud.showObjective('BOMB PLANTED - DEFEND THE SITE');
-    hud.pushKillfeed('Player', 'Phoenix', false);
-    hud.showOverlay('end', 1500);
-  } else {
-    player.state.position.set(0, 0.3, -20);
-    player.state.yaw = 0;
+    hud.showObjective('CONTEST BOMB SITE A');
+    economy.money = 3400;
+    hud.setMoney(3400);
+  } else if (name === 'buy') {
+    player.state.position.set(0, 0.3, -15.5);
+    player.state.yaw = Math.PI;
+    player.state.pitch = -0.04;
     weapon.give('ak47');
-    settle(10);
+    syncCamera();
+    economy.money = 3950;
+    hud.setMoney(3950);
+    hud.toggleBuyMenu(true, null, economy);
+  } else if (name === 'end') {
+    player.state.position.set(-11.2, 0.45, -8.0);
+    player.state.yaw = 0.65;
+    player.state.pitch = -0.06;
+    weapon.give('awp');
+    syncCamera();
+    hud.showObjective('COUNTER-TERRORISTS WIN — C4 DEFUSED');
+    hud.pushKillfeed('Player', 'Phoenix', true);
+    hud.showOverlay('end', 1500);
+    economy.money = 4850;
+    hud.setMoney(4850);
+  } else {
+    // start
+    player.state.position.set(0, 0.3, 14.5);
+    player.state.yaw = 0;
+    player.state.pitch = -0.03;
+    weapon.give('ak47');
+    syncCamera();
     hud.showOverlay('start', 0);
+    economy.money = 800;
+    hud.setMoney(800);
   }
 
   hud.setScores(2, 1, 95, 2, 1);
   syncHudLoadout();
-  hud.setMoney(3400);
 
   let painted = 0;
   function paint() {

@@ -23,6 +23,8 @@ export function createEconomy() {
 
   return {
     get money() { return playerMoney; },
+    set money(m) { playerMoney = clamp(m); },
+    set(amount) { playerMoney = clamp(amount); return playerMoney; },
     add(amount) {
       playerMoney = clamp(playerMoney + amount);
       return playerMoney;
